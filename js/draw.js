@@ -13,7 +13,9 @@ $(function () {
     var orbMap = ["火", "水", "木", "光", "暗", "心"];
     var orb = new Array();
 
-    var plane = [
+    var enable_drop = false;
+
+    var plane_attr = [
         [3, 1, 5, 2, 2, 2],
         [1, 1, 1, 3, 1, 1],
         [3, 1, 5, 1, 4, 6],
@@ -21,18 +23,41 @@ $(function () {
         [6, 6, 6, 1, 3, 6]
     ];
 
-    function RandomGeneratePlane() {
-        for (var i = 0; i < 6; i++){
-            for (var j = 0; j < 5; j++){
-                plane[j][i] = Math.floor(Math.random() * 6 + 1);
-            }
+    function Plane(attr, visited, pos_x, pos_y) {
+        this.attr = attr;
+        this.visited = visited;
+        this.pos_x = pos_x;
+        this.pos_y = pos_y;
+    }
+
+    var plane = new Array();
+
+    for (var i = 0; i < 5; i++){
+        plane[i] = new Array();
+        for (var j = 0; j < 6; j++){
+            plane[i][j] = new Plane(plane_attr[i][j],false,i,j);
         }
+    }
+
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+      }
+
+    function RandomGeneratePlane() {
+        $("#combo_text").text("combo:0");
+        do{
+            for (var i = 0; i < 5; i++){
+                for (var j = 0; j < 6; j++){
+                    plane[i][j].attr = Math.floor(Math.random() * 6 + 1);
+                }
+            }
+        }while(check_combo(plane));
     }
 
     function orbOnload() {
         for (var i = 0; i < 6; i++){
             for (var j = 0; j < 5; j++){
-                if (plane[j][i] === this.number) {
+                if (plane_attr[j][i] === this.number) {
                     ctx.drawImage(this, BG_x_coor[i], BG_y_coor[j], 80, 80);
                 }
             }
@@ -41,9 +66,9 @@ $(function () {
 
     function swap(i1, j1, i2, j2) {
         if (i1 >= 0 && i1 < 6 && j1 >= 0 && j1 < 5 && i2 >= 0 && i2 < 6 && j2 >= 0 && j2 < 5) { 
-            temp = plane[j1][i1];
-            plane[j1][i1] = plane[j2][i2];
-            plane[j2][i2] = temp;
+            temp = plane[j1][i1].attr;
+            plane[j1][i1].attr = plane[j2][i2].attr;
+            plane[j2][i2].attr = temp;
         }
     }
 
@@ -51,7 +76,7 @@ $(function () {
         for (var i = 0; i < 6; i++){
             for (var j = 0; j < 6; j++){
                 for (var k = 0; k < 5; k++){
-                    if (plane[k][j] === orb[i].number && ((targetOrbPos[0] != j || targetOrbPos[1] != k) || disable_disappear)) {
+                    if (plane[k][j].attr === orb[i].number && ((targetOrbPos[0] != j || targetOrbPos[1] != k) || disable_disappear)) {
                         ctx.drawImage(orb[i], BG_x_coor[j], BG_y_coor[k], 80, 80);
                     }
                 }
@@ -63,7 +88,7 @@ $(function () {
         start_x = evt.pageX - cvs.offsetLeft;
         start_y = evt.pageY - cvs.offsetTop;
         targetOrbPos = [Math.floor((start_x - 2) / 84), Math.floor((start_y - 1) / 84)];
-        targetOrbNum = plane[targetOrbPos[1]][targetOrbPos[0]];
+        targetOrbNum = plane[targetOrbPos[1]][targetOrbPos[0]].attr;
         mouseDown = true;
     }
 
@@ -91,8 +116,92 @@ $(function () {
             ctx.drawImage(BG, 0, 0, cvs.width, cvs.height);
             drawOrb(false);
             ctx.drawImage(orb[targetOrbNum - 1], BG_x_coor[targetOrbPos[0]], BG_y_coor[targetOrbPos[1]], 80, 80);
+
+            puzzle_elim(plane);
         }
     }
+
+    function check_combo(plane) {
+        for (var i = 0; i < 5; i++) {
+            for (var j = 0; j < 6; j++) {
+                if (j + 2 < 6 && plane[i][j].attr !== 0 && plane[i][j].attr === plane[i][j + 1].attr && plane[i][j].attr === plane[i][j + 2].attr){
+                    return true;
+                }
+                else if (i + 2 < 5 && plane[i][j].attr !== 0 && plane[i][j].attr === plane[i + 1][j].attr && plane[i][j].attr === plane[i + 2][j].attr){
+                    return true;
+                }
+            }
+        }
+        return false;
+    }    
+
+    function generate_drop(plane){
+        for(var i = 0; i < 5; i++){
+            for(var j = 0; j < 6; j++){
+                if(plane[i][j].attr === 0){
+                    plane[i][j].attr = Math.floor(Math.random() * 6 + 1);
+                }
+            }
+        }
+        return plane;
+    }
+
+    async function puzzle_elim(plane) {
+        var combo = 0;
+        var total_combo = 0;
+        do {
+            combo = 0;
+            for (var i = 0; i < 5; i++){
+                for (var j = 0; j < 6; j++){
+                    if (j + 2 < 6 && !plane[i][j].visited && plane[i][j].attr !== 0 && plane[i][j].attr === plane[i][j + 1].attr && plane[i][j].attr === plane[i][j + 2].attr) {
+                        var delete_combo_handle = new Array();
+                        delete_combo_handle.push(plane[i][j]);
+                        var temp_combo_set = BFS_combo(plane, delete_combo_handle, new Array());
+                        plane = Pop_combo(plane, temp_combo_set);
+                        ctx.drawImage(BG, 0, 0, cvs.width, cvs.height);
+                        drawOrb(true);
+                        combo++;
+                        total_combo++;
+                        $("#combo_text").text( "combo:" + total_combo);
+                        await sleep(500);
+                    }
+                    else if (i + 2 < 5 && !plane[i][j].visited && plane[i][j].attr !== 0 && plane[i][j].attr === plane[i + 1][j].attr && plane[i][j].attr === plane[i + 2][j].attr) {
+                        var delete_combo_handle = new Array();
+                        delete_combo_handle.push(plane[i][j]);
+                        var temp_combo_set = BFS_combo(plane, delete_combo_handle, new Array());
+                        plane = Pop_combo(plane, temp_combo_set);
+                        ctx.drawImage(BG, 0, 0, cvs.width, cvs.height);
+                        drawOrb(true);
+                        combo++;
+                        total_combo++;
+                        $("#combo_text").text( "combo:" + total_combo);
+                        await sleep(500);
+                    }
+                }
+            }
+            plane = Drop(plane);
+            ctx.drawImage(BG, 0, 0, cvs.width, cvs.height);
+            drawOrb(true);
+            await sleep(500);
+
+            if(enable_drop){
+                plane = generate_drop(plane);
+                ctx.drawImage(BG, 0, 0, cvs.width, cvs.height);
+                drawOrb(true);
+                await sleep(500);
+            }
+
+            for (var i = 0; i < 5; i++){
+                for (var j = 0; j < 6; j++){
+                    plane[i][j].visited = false;
+                }
+            }
+
+        } while (combo != 0);
+    }
+
+
+
 
     //setting src
     BG.src = "../img/轉珠盤面.png";
@@ -119,5 +228,15 @@ $(function () {
         ctx.drawImage(BG, 0, 0, cvs.width, cvs.height);
         drawOrb(true);
     });
+
+    $("#enableDrop").on("click",function(){
+        if($("#enableDrop").hasClass('active')){
+            enable_drop = false;
+        }
+        else{
+            enable_drop = true;
+        }
+    })
+
 
 });
